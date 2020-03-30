@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "Tab2Pgn": {
+      "commandName": "Project",
+      "commandLineArgs": "C:\\\\Dropbox\\\\ChessStats\\\\RepSheet\\\\RepBlack.tsv"
+    }
+  }
+}
