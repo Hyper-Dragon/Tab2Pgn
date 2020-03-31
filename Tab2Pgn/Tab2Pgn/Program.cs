@@ -1,11 +1,11 @@
-﻿using System;
+﻿using ChessLib.Data;
+using ChessLib.Parse.PGN;
+using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
-using ChessLib.Data;
-using ChessLib.Parse.PGN;
 
 namespace TabToPgn
 {
@@ -13,12 +13,65 @@ namespace TabToPgn
     {
         private static async Task Main(string[] args)
         {
-            string[] lines = System.IO.File.ReadAllLines(args[0]);
+            string fileIn = args[0];
+            string[] lines = System.IO.File.ReadAllLines(fileIn);
 
             List<(string title, string eco, int ply, string moves)> formatedMoves = BuildMoveLines(lines);
             string preParsedPgn = BuildPreParsedPgn(formatedMoves);
             IEnumerable<Game<ChessLib.Data.MoveRepresentation.MoveStorage>> parsedGames = await ParseAndValidatePgn(preParsedPgn).ConfigureAwait(false);
+            ValidateMoves(fileIn, parsedGames);
             DisplayPgn(parsedGames);
+        }
+
+        private static void ValidateMoves(string fileIn, IEnumerable<Game<ChessLib.Data.MoveRepresentation.MoveStorage>> parsedGames)
+        {
+            ChessLib.Data.Types.Enums.Color? repForSide = null;
+            SortedDictionary<string, (string pgnEvent, string move)> fenList = new SortedDictionary<string, (string pgnEvent, string move)>();
+
+            if (fileIn.Contains("WHITE", StringComparison.InvariantCultureIgnoreCase))
+            {
+                repForSide = ChessLib.Data.Types.Enums.Color.White;
+            }
+            else if (fileIn.Contains("BLACK", StringComparison.InvariantCultureIgnoreCase))
+            {
+                repForSide = ChessLib.Data.Types.Enums.Color.Black;
+            }
+
+            foreach (Game<ChessLib.Data.MoveRepresentation.MoveStorage> game in parsedGames)
+            {
+                while (game.HasNextMove)
+                {
+                    game.TraverseForward();
+
+                    if (repForSide != null && game.Board.ActivePlayer == repForSide)
+                    {
+                        if (game.HasNextMove)
+                        {
+                            string gameKey = $"{game.CurrentFEN}";
+
+                            if (fenList.ContainsKey(gameKey))
+                            {
+                                if (fenList[gameKey].move != game.NextMoveNode.Value.ToString())
+                                {
+                                    Console.WriteLine($"WARN: Multiple moves out of the same position found");
+                                    Console.WriteLine($"      {fenList[gameKey].pgnEvent}");
+                                    Console.WriteLine($"      {game.TagSection["Event"]} ({game.Board.ActivePlayer.ToString()} Move {game.Board.FullmoveCounter.ToString()})");
+                                    Console.WriteLine($"      {gameKey.PadRight(75)} -> {fenList[gameKey].move}/{game.NextMoveNode.Value.ToString()}");
+                                    Console.WriteLine("");
+                                }
+                            }
+                            else
+                            {
+                                fenList.Add(gameKey, ($"{game.TagSection["Event"]} ({game.Board.ActivePlayer.ToString()} Move {game.Board.FullmoveCounter.ToString()})", game.NextMoveNode.Value.ToString()));
+                            }
+                        }
+                    }
+                }
+
+                game.GoToInitialState();
+            }
+
+            Console.WriteLine("");
         }
 
         private static List<(string title, string eco, int ply, string moves)> BuildMoveLines(string[] lines)
@@ -93,8 +146,8 @@ namespace TabToPgn
 
         private static async Task<IEnumerable<Game<ChessLib.Data.MoveRepresentation.MoveStorage>>> ParseAndValidatePgn(string preParsedPgn)
         {
-            PGNParser v = new ChessLib.Parse.PGN.PGNParser();
-            System.Collections.Generic.IEnumerable<Game<ChessLib.Data.MoveRepresentation.MoveStorage>> parsedPgn = await v.GetGamesFromPGNAsync(preParsedPgn.ToString(CultureInfo.InvariantCulture)).ConfigureAwait(false);
+            PGNParser pgnParser = new ChessLib.Parse.PGN.PGNParser();
+            System.Collections.Generic.IEnumerable<Game<ChessLib.Data.MoveRepresentation.MoveStorage>> parsedPgn = await pgnParser.GetGamesFromPGNAsync(preParsedPgn.ToString(CultureInfo.InvariantCulture)).ConfigureAwait(false);
             return parsedPgn;
         }
 
