@@ -47,13 +47,17 @@ namespace TabToPgn
                     {
                         if (game.HasNextMove)
                         {
-                            string gameKey = $"{game.CurrentFEN}";
+                            string[] fenSplit = game.CurrentFEN.Split(" ");
+                            //string gameKey = $"{fenSplit[0]} {fenSplit[1]} {fenSplit[2]} {fenSplit[3]}";
+                            string gameKey = $"{fenSplit[0]} {fenSplit[1]} {fenSplit[2]}";
+
+                            //Console.WriteLine(gameKey);
 
                             if (fenList.ContainsKey(gameKey))
                             {
                                 if (fenList[gameKey].move != game.NextMoveNode.Value.ToString())
                                 {
-                                    Console.WriteLine($"WARN: Multiple Candidate Moves Leaving Position");
+                                    Console.WriteLine($"WARN: Multiple Candidate Moves Detected");
                                     Console.WriteLine($"      {fenList[gameKey].pgnEvent}");
                                     Console.WriteLine($"      {game.TagSection["Event"]} ({game.Board.ActivePlayer.ToString()} Move {game.Board.FullmoveCounter.ToString()})");
                                     Console.WriteLine($"      {gameKey.PadRight(75)} -> {fenList[gameKey].move}/{game.NextMoveNode.Value.ToString()}");
@@ -62,6 +66,7 @@ namespace TabToPgn
                             }
                             else
                             {
+                               
                                 fenList.Add(gameKey, ($"{game.TagSection["Event"]} ({game.Board.ActivePlayer.ToString()} Move {game.Board.FullmoveCounter.ToString()})", game.NextMoveNode.Value.ToString()));
                             }
                         }
