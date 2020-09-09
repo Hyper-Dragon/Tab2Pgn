@@ -27,7 +27,7 @@ namespace TabToPgn
             string preParsedPgn = BuildPreParsedPgn(formatedMoves);
             IEnumerable<Game<ChessLib.Data.MoveRepresentation.MoveStorage>> parsedGames = await ParseAndValidatePgn(preParsedPgn).ConfigureAwait(false);
             ValidateMoves(fileIn, parsedGames);
-            BuildMoveImage(parsedGames,true);
+            BuildMoveImage(parsedGames,((fileIn.ToLower().Contains("white"))?true:false));
             DisplayPgn(parsedGames);
         }
 
@@ -42,7 +42,7 @@ namespace TabToPgn
             // Create a new pen.
             using Pen orangePen = new Pen(Brushes.Orange)
             {
-                Width = 4.0F
+                Width = 2.0F
             };
 
             string BOARD_FEN = @"rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR";
@@ -132,34 +132,35 @@ namespace TabToPgn
 
             string BKG_URL = @"https://images.chesscomfiles.com/uploads/v1/theme/101328-0.caa989e5.jpeg";
             TextureBrush bkgBrush = null;
-            int SPACER_SIZE = 60;
-            int BOARD_SIZE = startBoardImage.Width; //160;
+            int SPACER_SIZE = 40;
+            int BOARD_SIZE = startBoardImage.Width;
             int BOX_WIDTH = 80;
-            int BOX_HEIGHT = 30;
+            int BOX_HEIGHT = 20;
             int BLOCK_SIZE = BOARD_SIZE + SPACER_SIZE;
 
             // Create font and brush.
-            using Font drawFont = new Font(FontFamily.GenericSansSerif, 14f);
-            Brush drawBrush = Brushes.White;
+            using Font drawFont = new Font(FontFamily.GenericSansSerif, 12f);
+            Brush drawBrush = new SolidBrush(Color.FromArgb(255, 255, 255, 255));
+            Brush moveBkgBrush = new SolidBrush(Color.FromArgb(235, 200,0,0));
 
-            using (var webClient = new WebClient())
-            {
-                using var bkgImgStream = new MemoryStream(webClient.DownloadData(BKG_URL));
-                Image bkgImage = Image.FromStream(bkgImgStream);
-                bkgBrush = new TextureBrush(bkgImage);
-            }
-
-            using (var image = new Bitmap(maxWidth*BLOCK_SIZE, moveLines.Count*BLOCK_SIZE))
+            using (var image = new Bitmap(maxWidth*BLOCK_SIZE, moveLines.Count*BLOCK_SIZE, PixelFormat.Format32bppArgb))
             {
                 using (var graphics = Graphics.FromImage(image))
                 {
                     graphics.CompositingQuality = CompositingQuality.HighQuality;
                     graphics.InterpolationMode = InterpolationMode.HighQualityBicubic;
-                    graphics.CompositingMode = CompositingMode.SourceCopy;
+                    graphics.CompositingMode = CompositingMode.SourceOver;
                     graphics.SmoothingMode = SmoothingMode.AntiAlias;
-                    graphics.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
-                    
-                    graphics.FillRectangle(bkgBrush,0,0,image.Width,image.Height);
+                    graphics.TextRenderingHint = TextRenderingHint.AntiAlias;
+
+                    graphics.Clear(Color.Black);
+
+                    using (var webClient = new WebClient())
+                    {
+                        using var bkgImgStream = new MemoryStream(webClient.DownloadData(BKG_URL));
+                        Image bkgImage = Image.FromStream(bkgImgStream);
+                        graphics.DrawImage(bkgImage, 0, 0, image.Width, image.Height);
+                    }
 
                     for (int loopY = 0; loopY < moveLines.Count; loopY++)
                     {
@@ -207,21 +208,20 @@ namespace TabToPgn
 
                         for (int loopX = 0; loopX < moveLine.Length; loopX++)
                         {
-
-
-
                             if (lastMoveNameList.ContainsKey(moveLines[loopY].Keys[loopX]))
                             {
-                                using var drawFormat = new System.Drawing.StringFormat() { FormatFlags = StringFormatFlags.DirectionVertical };
+                                using var drawFormat = new System.Drawing.StringFormat() { FormatFlags = StringFormatFlags.DirectionVertical};
 
                                 graphics.DrawString(lastMoveNameList[moveLines[loopY].Keys[loopX]],
-                                                    drawFont,
+                                                    drawFont, 
                                                     drawBrush,
-                                                    ((loopX * BLOCK_SIZE) + (SPACER_SIZE / 2)) - (BOX_WIDTH / 3),
-                                                    10,//((loopY * BLOCK_SIZE) + (SPACER_SIZE / 2) + (BOARD_SIZE)) - (BOX_HEIGHT / 2),
+                                                    ((loopX * BLOCK_SIZE) + (SPACER_SIZE / 2)) - (BOX_WIDTH / 4),
+                                                    (SPACER_SIZE / 2) + BLOCK_SIZE,
                                                     drawFormat);
-                            }
 
+
+                                lastMoveNameList.Remove(moveLines[loopY].Keys[loopX]);
+                            }
 
                             if (loopY+1 < moveLines.Count)
                             {
@@ -231,7 +231,7 @@ namespace TabToPgn
                                     {
                                         if (moveLines[loopY + 1].Values[loopNextRowX].Item3 != null)
                                         {
-                                            graphics.FillRectangle(Brushes.Black,
+                                            graphics.FillRectangle(moveBkgBrush,
                                                                    ((loopNextRowX * BLOCK_SIZE) + (SPACER_SIZE / 2) + (BOARD_SIZE / 2)) - (BOX_WIDTH / 2),
                                                                    ((loopY * BLOCK_SIZE) + (SPACER_SIZE / 2) + (BOARD_SIZE) + (SPACER_SIZE / 2)) - (BOX_HEIGHT / 2),
                                                                    BOX_WIDTH,
@@ -240,8 +240,8 @@ namespace TabToPgn
                                             graphics.DrawString(moveLines[loopY + 1].Values[loopNextRowX].Item1, 
                                                                 drawFont,
                                                                 drawBrush,
-                                                                ((loopNextRowX * BLOCK_SIZE) + (SPACER_SIZE / 2) + (BOARD_SIZE / 2)) - (BOX_WIDTH / 2) + 4,
-                                                                ((loopY * BLOCK_SIZE) + (SPACER_SIZE / 2) + (BOARD_SIZE) + (SPACER_SIZE / 2)) - (BOX_HEIGHT / 2) + 4);
+                                                                ((loopNextRowX * BLOCK_SIZE) + (SPACER_SIZE / 2) + (BOARD_SIZE / 2)) - (BOX_WIDTH / 2) + 1,
+                                                                ((loopY * BLOCK_SIZE) + (SPACER_SIZE / 2) + (BOARD_SIZE) + (SPACER_SIZE / 2)) - (BOX_HEIGHT / 2) + 1);
                                         }
                                     }
                                 }
@@ -254,9 +254,9 @@ namespace TabToPgn
                             }
                         }
                     }
-
-                    image.Save(@"C:\Dropbox\ChessStats\resized.png", ImageFormat.Png);
                 }
+
+                image.Save(@"C:\Dropbox\ChessStats\resized.png", ImageFormat.Png);
             }
         }
 
