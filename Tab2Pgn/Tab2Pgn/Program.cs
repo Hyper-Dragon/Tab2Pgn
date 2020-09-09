@@ -27,38 +27,46 @@ namespace TabToPgn
             string preParsedPgn = BuildPreParsedPgn(formatedMoves);
             IEnumerable<Game<ChessLib.Data.MoveRepresentation.MoveStorage>> parsedGames = await ParseAndValidatePgn(preParsedPgn).ConfigureAwait(false);
             ValidateMoves(fileIn, parsedGames);
-            BuildMoveImage(parsedGames,((fileIn.ToLower().Contains("white"))?true:false));
+            BuildMoveImage(parsedGames, fileIn.Contains("WHITE", StringComparison.OrdinalIgnoreCase));
             DisplayPgn(parsedGames);
         }
 
 
         private async static void BuildMoveImage(IEnumerable<Game<ChessLib.Data.MoveRepresentation.MoveStorage>> parsedGames, bool isFromWhitesPerspective = true)
         {
-            string BOARD_DOWNLOAD_SIZE = "0";
-            string IS_BOARD_FLIPPED = isFromWhitesPerspective ? "": "&flip=true";
+            const string BOARD_DOWNLOAD_SIZE = "0";
+            const string BKG_URL = @"https://images.chesscomfiles.com/uploads/v1/theme/101328-0.caa989e5.jpeg";
+            const string BOARD_URL_START = @"https://www.chess.com/dynboard?board=green&fen=";
+            const string BOARD_URL_OPT = @"&piece=space&size=" + BOARD_DOWNLOAD_SIZE;
+            const int SPACER_SIZE = 40;
+            const int BOX_WIDTH = 80;
+            const int BOX_HEIGHT = 20;
+            const string BOARD_FEN = @"rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR";
+
+            string IS_BOARD_FLIPPED = isFromWhitesPerspective ? "" : "&flip=true";
+
+            using var webClient = new WebClient();
+            using var startBoardImgStream = new MemoryStream(webClient.DownloadData($"{BOARD_URL_START}{BOARD_FEN}{BOARD_URL_OPT}{IS_BOARD_FLIPPED}"));
+            Image startBoardImage = Image.FromStream(startBoardImgStream);
+
+            int BOARD_SIZE = startBoardImage.Width;
+            int BLOCK_SIZE = BOARD_SIZE + SPACER_SIZE;
+
 
             SortedList<string, string> lastMoveNameList = new();
 
             // Create a new pen.
-            using Pen orangePen = new Pen(Brushes.Orange)
-            {
-                Width = 2.0F
-            };
+            using Pen orangePen = new Pen(Brushes.Orange) { Width = 2.0F };
 
-            string BOARD_FEN = @"rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR";
-            Image startBoardImage = null;
+
             int moveCount = 0;
             int maxWidth = 0;
 
-            using (var webClient = new WebClient())
-            {
-                using var startBoardImgStream = new MemoryStream(webClient.DownloadData(@"https://www.chess.com/dynboard?board=green&fen=" + BOARD_FEN + @"&piece=space&size="+BOARD_DOWNLOAD_SIZE+IS_BOARD_FLIPPED));
-                startBoardImage = Image.FromStream(startBoardImgStream);
-            }
 
-            List<SortedList<string,(string, string, Image, string)>> moveLines = new();
-            moveLines.Add(new SortedList<string,(string,string,Image, string)>());
-            moveLines[0].Add(BOARD_FEN, ("",BOARD_FEN, startBoardImage,"") );
+
+            List<SortedList<string, (string, string, Image, string)>> moveLines = new();
+            moveLines.Add(new SortedList<string, (string, string, Image, string)>());
+            moveLines[0].Add(BOARD_FEN, ("", BOARD_FEN, startBoardImage, ""));
 
             foreach (Game<ChessLib.Data.MoveRepresentation.MoveStorage> game in parsedGames)
             {
@@ -80,19 +88,19 @@ namespace TabToPgn
                     {
                         using (HttpClient httpClient = new HttpClient())
                         {
-                            var response = httpClient.GetStreamAsync(@"https://www.chess.com/dynboard?board=green&fen=" + gameKey + "&piece=space&size=" + BOARD_DOWNLOAD_SIZE +IS_BOARD_FLIPPED).Result;
+                            var response = await httpClient.GetStreamAsync(new Uri($"{BOARD_URL_START}{gameKey}{BOARD_URL_OPT}{IS_BOARD_FLIPPED}")).ConfigureAwait(false);
                             bmp = Bitmap.FromStream(response);
                         }
-                        
+
                         moveLines[moveCount].Add($"{moveKey}", (game.CurrentMoveNode.Value.SAN, $"{gameKey}", bmp, game.CurrentMoveNode.Value.Comment));
                     }
 
-                    if (moveCount+1 < moveLines.Count)
+                    if (moveCount + 1 < moveLines.Count)
                     {
-                        int addedCount = moveLines[moveCount + 1].Where(x => x.Key.StartsWith(moveKey)).Count();
+                        int addedCount = moveLines[moveCount + 1].Where(x => x.Key.StartsWith(moveKey,StringComparison.OrdinalIgnoreCase)).Count();
                         if (addedCount >= 1)
                         {
-                            moveLines[moveCount].Add($"{moveKey}{addedCount}", ("", "", null,""));
+                            moveLines[moveCount].Add($"{moveKey}{addedCount}", ("", "", null, ""));
                         }
                     }
 
@@ -108,19 +116,19 @@ namespace TabToPgn
             }
 
 
-            for(int loopY=1 ; loopY < (moveLines.Count-1) ; loopY++)
+            for (int loopY = 1; loopY < (moveLines.Count - 1); loopY++)
             {
-                for(int loopX=0; loopX < moveLines[loopY].Count; loopX++)
+                for (int loopX = 0; loopX < moveLines[loopY].Count; loopX++)
                 {
                     if (moveLines[loopY].Values[loopX].Item3 != null)
                     {
-                        int addedCount = moveLines[loopY + 1].Where(x => x.Key.StartsWith(moveLines[loopY].Keys[loopX])).Count();
+                        int addedCount = moveLines[loopY + 1].Where(x => x.Key.StartsWith(moveLines[loopY].Keys[loopX], StringComparison.OrdinalIgnoreCase)).Count();
 
                         if (addedCount == 0)
                         {
-                            for (int loopInnerY=loopY+1; loopInnerY < moveLines.Count; loopInnerY++)
+                            for (int loopInnerY = loopY + 1; loopInnerY < moveLines.Count; loopInnerY++)
                             {
-                                moveLines[loopInnerY].Add($"{moveLines[loopY].Keys[loopX]}{addedCount}", ("", "", null,""));
+                                moveLines[loopInnerY].Add($"{moveLines[loopY].Keys[loopX]}{addedCount}", ("", "", null, ""));
                             }
                         }
                     }
@@ -129,139 +137,123 @@ namespace TabToPgn
                 maxWidth = Math.Max(maxWidth, moveLines[loopY].Count);
             }
 
-
-            string BKG_URL = @"https://images.chesscomfiles.com/uploads/v1/theme/101328-0.caa989e5.jpeg";
-            TextureBrush bkgBrush = null;
-            int SPACER_SIZE = 40;
-            int BOARD_SIZE = startBoardImage.Width;
-            int BOX_WIDTH = 80;
-            int BOX_HEIGHT = 20;
-            int BLOCK_SIZE = BOARD_SIZE + SPACER_SIZE;
-
             // Create font and brush.
             using Font drawFont = new Font(FontFamily.GenericSansSerif, 12f);
-            Brush drawBrush = new SolidBrush(Color.FromArgb(255, 255, 255, 255));
-            Brush moveBkgBrush = new SolidBrush(Color.FromArgb(235, 200,0,0));
+            using Brush drawBrush = new SolidBrush(Color.FromArgb(255, 255, 255, 255));
+            using Brush moveBkgBrush = new SolidBrush(Color.FromArgb(235, 200, 0, 0));
 
-            using (var image = new Bitmap(maxWidth*BLOCK_SIZE, moveLines.Count*BLOCK_SIZE, PixelFormat.Format32bppArgb))
+            using var image = new Bitmap(maxWidth * BLOCK_SIZE, moveLines.Count * BLOCK_SIZE, PixelFormat.Format32bppArgb);
+            using var graphics = Graphics.FromImage(image);
+
+            graphics.CompositingQuality = CompositingQuality.HighQuality;
+            graphics.InterpolationMode = InterpolationMode.HighQualityBicubic;
+            graphics.CompositingMode = CompositingMode.SourceOver;
+            graphics.SmoothingMode = SmoothingMode.AntiAlias;
+            graphics.TextRenderingHint = TextRenderingHint.AntiAlias;
+
+            graphics.Clear(Color.Black);
+
+            using var bkgImgStream = new MemoryStream(webClient.DownloadData(BKG_URL));
+            Image bkgImage = Image.FromStream(bkgImgStream);
+            graphics.DrawImage(bkgImage, 0, 0, image.Width, image.Height);
+
+            for (int loopY = 0; loopY < moveLines.Count; loopY++)
             {
-                using (var graphics = Graphics.FromImage(image))
+                var moveLine = moveLines[loopY].OrderBy(x => x.Key).ToArray();
+
+                for (int loopX = 0; loopX < moveLine.Length; loopX++)
                 {
-                    graphics.CompositingQuality = CompositingQuality.HighQuality;
-                    graphics.InterpolationMode = InterpolationMode.HighQualityBicubic;
-                    graphics.CompositingMode = CompositingMode.SourceOver;
-                    graphics.SmoothingMode = SmoothingMode.AntiAlias;
-                    graphics.TextRenderingHint = TextRenderingHint.AntiAlias;
-
-                    graphics.Clear(Color.Black);
-
-                    using (var webClient = new WebClient())
+                    //Draw Connector
+                    if (loopY + 1 < moveLines.Count)
                     {
-                        using var bkgImgStream = new MemoryStream(webClient.DownloadData(BKG_URL));
-                        Image bkgImage = Image.FromStream(bkgImgStream);
-                        graphics.DrawImage(bkgImage, 0, 0, image.Width, image.Height);
-                    }
-
-                    for (int loopY = 0; loopY < moveLines.Count; loopY++)
-                    {
-                        var moveLine = moveLines[loopY].OrderBy(x => x.Key).ToArray();
-
-                        for (int loopX = 0; loopX < moveLine.Length; loopX++)
+                        for (int loopNextRowX = 0; loopNextRowX < moveLines[loopY + 1].Count; loopNextRowX++)
                         {
-                            //Draw Connector
-                            if (loopY + 1 < moveLines.Count)
+                            if (moveLines[loopY + 1].Keys[loopNextRowX].Contains(moveLines[loopY].Keys[loopX],StringComparison.OrdinalIgnoreCase))
                             {
-                                for (int loopNextRowX = 0; loopNextRowX < moveLines[loopY + 1].Count; loopNextRowX++)
+                                if (moveLines[loopY + 1].Values[loopNextRowX].Item3 != null)
                                 {
-                                    if (moveLines[loopY + 1].Keys[loopNextRowX].Contains(moveLines[loopY].Keys[loopX]))
-                                    {
-                                        if (moveLines[loopY + 1].Values[loopNextRowX].Item3 != null)
-                                        {
-                                            graphics.DrawLine(orangePen,
-                                                              (loopX * BLOCK_SIZE) + (SPACER_SIZE / 2) + (BOARD_SIZE / 2),
-                                                              (loopY * BLOCK_SIZE) + (SPACER_SIZE / 2) + (BOARD_SIZE),
-                                                              (loopX * BLOCK_SIZE) + (SPACER_SIZE / 2) + (BOARD_SIZE / 2),
-                                                              (loopY * BLOCK_SIZE) + (SPACER_SIZE / 2) + (BOARD_SIZE) + (SPACER_SIZE / 2));
+                                    graphics.DrawLine(orangePen,
+                                                      (loopX * BLOCK_SIZE) + (SPACER_SIZE / 2) + (BOARD_SIZE / 2),
+                                                      (loopY * BLOCK_SIZE) + (SPACER_SIZE / 2) + (BOARD_SIZE),
+                                                      (loopX * BLOCK_SIZE) + (SPACER_SIZE / 2) + (BOARD_SIZE / 2),
+                                                      (loopY * BLOCK_SIZE) + (SPACER_SIZE / 2) + (BOARD_SIZE) + (SPACER_SIZE / 2));
 
-                                            graphics.DrawLine(orangePen,
-                                                              (loopNextRowX * BLOCK_SIZE) + (SPACER_SIZE / 2) + (BOARD_SIZE / 2),
-                                                              (loopY * BLOCK_SIZE) + (SPACER_SIZE / 2) + (BOARD_SIZE) + (SPACER_SIZE / 2),
-                                                              (loopNextRowX * BLOCK_SIZE) + (SPACER_SIZE / 2) + (BOARD_SIZE / 2),
-                                                              ((loopY + 1) * BLOCK_SIZE) + (SPACER_SIZE / 2));
+                                    graphics.DrawLine(orangePen,
+                                                      (loopNextRowX * BLOCK_SIZE) + (SPACER_SIZE / 2) + (BOARD_SIZE / 2),
+                                                      (loopY * BLOCK_SIZE) + (SPACER_SIZE / 2) + (BOARD_SIZE) + (SPACER_SIZE / 2),
+                                                      (loopNextRowX * BLOCK_SIZE) + (SPACER_SIZE / 2) + (BOARD_SIZE / 2),
+                                                      ((loopY + 1) * BLOCK_SIZE) + (SPACER_SIZE / 2));
 
-                                            graphics.DrawLine(orangePen,
-                                                              (loopX * BLOCK_SIZE) + (SPACER_SIZE / 2) + (BOARD_SIZE / 2),
-                                                              (loopY * BLOCK_SIZE) + (SPACER_SIZE / 2) + (BOARD_SIZE) + (SPACER_SIZE / 2),
-                                                              (loopNextRowX * BLOCK_SIZE) + (SPACER_SIZE / 2) + (BOARD_SIZE / 2),
-                                                              ((loopY + 1) * BLOCK_SIZE));
-                                        }
-                                    }
+                                    graphics.DrawLine(orangePen,
+                                                      (loopX * BLOCK_SIZE) + (SPACER_SIZE / 2) + (BOARD_SIZE / 2),
+                                                      (loopY * BLOCK_SIZE) + (SPACER_SIZE / 2) + (BOARD_SIZE) + (SPACER_SIZE / 2),
+                                                      (loopNextRowX * BLOCK_SIZE) + (SPACER_SIZE / 2) + (BOARD_SIZE / 2),
+                                                      ((loopY + 1) * BLOCK_SIZE));
                                 }
-                            }
-                        }
-                    }
-
-
-                    for (int loopY = 0; loopY < moveLines.Count; loopY++)
-                    {
-                        var moveLine = moveLines[loopY].OrderBy(x => x.Key).ToArray();
-
-                        for (int loopX = 0; loopX < moveLine.Length; loopX++)
-                        {
-                            if (lastMoveNameList.ContainsKey(moveLines[loopY].Keys[loopX]))
-                            {
-                                using var drawFormat = new System.Drawing.StringFormat() { FormatFlags = StringFormatFlags.DirectionVertical};
-
-                                graphics.DrawString(lastMoveNameList[moveLines[loopY].Keys[loopX]],
-                                                    drawFont, 
-                                                    drawBrush,
-                                                    ((loopX * BLOCK_SIZE) + (SPACER_SIZE / 2)) - (BOX_WIDTH / 4),
-                                                    (SPACER_SIZE / 2) + BLOCK_SIZE,
-                                                    drawFormat);
-
-
-                                lastMoveNameList.Remove(moveLines[loopY].Keys[loopX]);
-                            }
-
-                            if (loopY+1 < moveLines.Count)
-                            {
-                                for (int loopNextRowX = 0; loopNextRowX < moveLines[loopY + 1].Count; loopNextRowX++)
-                                {
-                                    if (moveLines[loopY + 1].Keys[loopNextRowX].Contains(moveLines[loopY].Keys[loopX]))
-                                    {
-                                        if (moveLines[loopY + 1].Values[loopNextRowX].Item3 != null)
-                                        {
-                                            graphics.FillRectangle(moveBkgBrush,
-                                                                   ((loopNextRowX * BLOCK_SIZE) + (SPACER_SIZE / 2) + (BOARD_SIZE / 2)) - (BOX_WIDTH / 2),
-                                                                   ((loopY * BLOCK_SIZE) + (SPACER_SIZE / 2) + (BOARD_SIZE) + (SPACER_SIZE / 2)) - (BOX_HEIGHT / 2),
-                                                                   BOX_WIDTH,
-                                                                   BOX_HEIGHT);
-
-                                            graphics.DrawString(moveLines[loopY + 1].Values[loopNextRowX].Item1, 
-                                                                drawFont,
-                                                                drawBrush,
-                                                                ((loopNextRowX * BLOCK_SIZE) + (SPACER_SIZE / 2) + (BOARD_SIZE / 2)) - (BOX_WIDTH / 2) + 1,
-                                                                ((loopY * BLOCK_SIZE) + (SPACER_SIZE / 2) + (BOARD_SIZE) + (SPACER_SIZE / 2)) - (BOX_HEIGHT / 2) + 1);
-                                        }
-                                    }
-                                }
-                            }
-
-                            //Draw Board
-                            if (moveLine[loopX].Value.Item3 != null)
-                            {
-                                graphics.DrawImage(moveLine[loopX].Value.Item3, (loopX * BLOCK_SIZE) + (SPACER_SIZE / 2), (loopY * BLOCK_SIZE) + (SPACER_SIZE / 2));
                             }
                         }
                     }
                 }
-
-                image.Save(@"C:\Dropbox\ChessStats\resized.png", ImageFormat.Png);
             }
+
+
+            for (int loopY = 0; loopY < moveLines.Count; loopY++)
+            {
+                var moveLine = moveLines[loopY].OrderBy(x => x.Key).ToArray();
+
+                for (int loopX = 0; loopX < moveLine.Length; loopX++)
+                {
+                    if (lastMoveNameList.ContainsKey(moveLines[loopY].Keys[loopX]))
+                    {
+                        using var drawFormat = new System.Drawing.StringFormat() { FormatFlags = StringFormatFlags.DirectionVertical };
+
+                        graphics.DrawString(lastMoveNameList[moveLines[loopY].Keys[loopX]],
+                                            drawFont,
+                                            drawBrush,
+                                            ((loopX * BLOCK_SIZE) + (SPACER_SIZE / 2)) - (BOX_WIDTH / 4),
+                                            (SPACER_SIZE / 2) + BLOCK_SIZE,
+                                            drawFormat);
+
+
+                        lastMoveNameList.Remove(moveLines[loopY].Keys[loopX]);
+                    }
+
+                    if (loopY + 1 < moveLines.Count)
+                    {
+                        for (int loopNextRowX = 0; loopNextRowX < moveLines[loopY + 1].Count; loopNextRowX++)
+                        {
+                            if (moveLines[loopY + 1].Keys[loopNextRowX].Contains(moveLines[loopY].Keys[loopX], StringComparison.OrdinalIgnoreCase))
+                            {
+                                if (moveLines[loopY + 1].Values[loopNextRowX].Item3 != null)
+                                {
+                                    graphics.FillRectangle(moveBkgBrush,
+                                                           ((loopNextRowX * BLOCK_SIZE) + (SPACER_SIZE / 2) + (BOARD_SIZE / 2)) - (BOX_WIDTH / 2),
+                                                           ((loopY * BLOCK_SIZE) + (SPACER_SIZE / 2) + (BOARD_SIZE) + (SPACER_SIZE / 2)) - (BOX_HEIGHT / 2),
+                                                           BOX_WIDTH,
+                                                           BOX_HEIGHT);
+
+                                    graphics.DrawString(moveLines[loopY + 1].Values[loopNextRowX].Item1,
+                                                        drawFont,
+                                                        drawBrush,
+                                                        ((loopNextRowX * BLOCK_SIZE) + (SPACER_SIZE / 2) + (BOARD_SIZE / 2)) - (BOX_WIDTH / 2) + 1,
+                                                        ((loopY * BLOCK_SIZE) + (SPACER_SIZE / 2) + (BOARD_SIZE) + (SPACER_SIZE / 2)) - (BOX_HEIGHT / 2) + 1);
+                                }
+                            }
+                        }
+                    }
+
+                    //Draw Board
+                    if (moveLine[loopX].Value.Item3 != null)
+                    {
+                        graphics.DrawImage(moveLine[loopX].Value.Item3, (loopX * BLOCK_SIZE) + (SPACER_SIZE / 2), (loopY * BLOCK_SIZE) + (SPACER_SIZE / 2));
+                    }
+                }
+            }
+
+            image.Save(@"C:\Dropbox\ChessStats\resized.png", ImageFormat.Png);
         }
 
-
-
+        [System.Diagnostics.CodeAnalysis.SuppressMessage("Globalization", "CA1303:Do not pass literals as localized parameters", Justification = "Will never be localized")]
         private static void ValidateMoves(string fileIn, IEnumerable<Game<ChessLib.Data.MoveRepresentation.MoveStorage>> parsedGames)
         {
             ChessLib.Data.Types.Enums.Color? repForSide = null;
@@ -287,10 +279,7 @@ namespace TabToPgn
                         if (game.HasNextMove)
                         {
                             string[] fenSplit = game.CurrentFEN.Split(" ");
-                            //string gameKey = $"{fenSplit[0]} {fenSplit[1]} {fenSplit[2]} {fenSplit[3]}";
                             string gameKey = $"{fenSplit[0]} {fenSplit[1]} {fenSplit[2]}";
-
-                            //Console.WriteLine(gameKey);
 
                             if (fenList.ContainsKey(gameKey))
                             {
@@ -298,15 +287,15 @@ namespace TabToPgn
                                 {
                                     Console.WriteLine($"WARN: Multiple Candidate Moves Detected");
                                     Console.WriteLine($"      {fenList[gameKey].pgnEvent}");
-                                    Console.WriteLine($"      {game.TagSection["Event"]} ({game.Board.ActivePlayer.ToString()} Move {game.Board.FullmoveCounter.ToString()})");
-                                    Console.WriteLine($"      {gameKey.PadRight(75)} -> {fenList[gameKey].move}/{game.NextMoveNode.Value.ToString()}");
+                                    Console.WriteLine($"      {game.TagSection["Event"]} ({game.Board.ActivePlayer} Move {game.Board.FullmoveCounter})");
+                                    Console.WriteLine($"      {gameKey,-75} -> {fenList[gameKey].move}/{game.NextMoveNode.Value}");
                                     Console.WriteLine("");
                                 }
                             }
                             else
                             {
                                
-                                fenList.Add(gameKey, ($"{game.TagSection["Event"]} ({game.Board.ActivePlayer.ToString()} Move {game.Board.FullmoveCounter.ToString()})", game.NextMoveNode.Value.ToString()));
+                                fenList.Add(gameKey, ($"{game.TagSection["Event"]} ({game.Board.ActivePlayer} Move {game.Board.FullmoveCounter})", game.NextMoveNode.Value.ToString()));
                             }
                         }
                     }
@@ -341,7 +330,7 @@ namespace TabToPgn
                         formatedMoves.Add((currentTitle, currentECO, currentMoves.Count, TabToPgnFormat(currentMoves)));
                         break;
                     case "COMME":
-                        formatedMoves[formatedMoves.Count - 1] = (currentTitle, currentECO, currentMoves.Count, TabToPgnFormat(currentMoves, (line.Split("\t")).Skip(1).ToList()));
+                        formatedMoves[^1] = (currentTitle, currentECO, currentMoves.Count, TabToPgnFormat(currentMoves, (line.Split("\t")).Skip(1).ToList()));
                         break;
                     default:
                         break;
