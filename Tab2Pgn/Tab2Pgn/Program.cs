@@ -20,17 +20,31 @@ namespace TabToPgn
     {
         private static async Task Main(string[] args)
         {
+            //C:\\Dropbox\\ChessStats\\RepSheet\\RepWhite.tsv
+
             string fileIn = args[0];
             string[] lines = System.IO.File.ReadAllLines(fileIn);
+            string preParsedPgn = "";
 
-            List<(string title, string eco, int ply, string moves)> formatedMoves = BuildMoveLines(lines);
-            string preParsedPgn = BuildPreParsedPgn(formatedMoves);
+            if (fileIn.EndsWith("tsv",StringComparison.OrdinalIgnoreCase))
+            {
+                List<(string title, string eco, int ply, string moves)> formatedMoves = BuildMoveLines(lines);
+                preParsedPgn = BuildPreParsedPgn(formatedMoves);
+            }
+            else if (fileIn.EndsWith("pgn", StringComparison.OrdinalIgnoreCase))
+            {
+                preParsedPgn = File.ReadAllText(fileIn);
+            }
+            else
+            {
+                Environment.Exit(-1);
+            }
+
             IEnumerable<Game<ChessLib.Data.MoveRepresentation.MoveStorage>> parsedGames = await ParseAndValidatePgn(preParsedPgn).ConfigureAwait(false);
             ValidateMoves(fileIn, parsedGames);
             BuildMoveImage(parsedGames, fileIn.Contains("WHITE", StringComparison.OrdinalIgnoreCase));
             DisplayPgn(parsedGames);
         }
-
 
         private static void BuildMoveImage(IEnumerable<Game<ChessLib.Data.MoveRepresentation.MoveStorage>> parsedGames, bool isFromWhitesPerspective = true)
         {
@@ -38,32 +52,37 @@ namespace TabToPgn
             const string BKG_URL = @"https://images.chesscomfiles.com/uploads/v1/theme/101328-0.caa989e5.jpeg";
             const string BOARD_URL_START = @"https://www.chess.com/dynboard?board=green&fen=";
             const string BOARD_URL_OPT = @"&piece=space&size=" + BOARD_DOWNLOAD_SIZE;
-            const int SPACER_SIZE = 40;
-            const int BOX_WIDTH = 80;
-            const int BOX_HEIGHT = 20;
+            const int SPACER_SIZE_X = 16;
+            const int SPACER_SIZE_Y = 30;
+            const int BOX_WIDTH = 72;
+            const int BOX_HEIGHT = 16;
             const string BOARD_FEN = @"rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR";
-
+            const float CONNECT_SIZE = 2.0f;
+            const float FONT_SIZE = 10f;
+            const int BOARD_SIZE = 120;
+            const int BLOCK_SIZE_X = BOARD_SIZE + SPACER_SIZE_X;
+            const int BLOCK_SIZE_Y = BOARD_SIZE + SPACER_SIZE_Y;
+            const int STRIPE_TXT_OFFSET = 17;
             string IS_BOARD_FLIPPED = isFromWhitesPerspective ? "" : "&flip=true";
 
+
+            //Download initial position
             using var webClient = new WebClient();
             using var startBoardImgStream = new MemoryStream(webClient.DownloadData($"{BOARD_URL_START}{BOARD_FEN}{BOARD_URL_OPT}{IS_BOARD_FLIPPED}"));
-            Image startBoardImage = Image.FromStream(startBoardImgStream);
-
-            int BOARD_SIZE = startBoardImage.Width;
-            int BLOCK_SIZE = BOARD_SIZE + SPACER_SIZE;
-
-
+            using var startBoardBmp = new Bitmap(Image.FromStream(startBoardImgStream));
+            Bitmap startBoardresizedBmp = new Bitmap(startBoardBmp, new Size(BOARD_SIZE, BOARD_SIZE));
+            
             SortedList<string, string> lastMoveNameList = new();
 
             // Create a new pen.
-            using Pen orangePen = new Pen(Brushes.Orange) { Width = 2.0F };
+            using Pen orangePen = new Pen(Brushes.Orange) { Width = CONNECT_SIZE };
 
             int moveCount = 0;
             int maxWidth = 0;
 
             List<SortedList<string, (string, string, Image, string)>> moveLines = new();
             moveLines.Add(new SortedList<string, (string, string, Image, string)>());
-            moveLines[0].Add(BOARD_FEN, ("", BOARD_FEN, startBoardImage, ""));
+            moveLines[0].Add(BOARD_FEN, ("", BOARD_FEN, startBoardresizedBmp, ""));
 
             foreach (Game<ChessLib.Data.MoveRepresentation.MoveStorage> game in parsedGames)
             {
@@ -85,12 +104,15 @@ namespace TabToPgn
                     {
                         using (HttpClient httpClient = new HttpClient())
                         {
+                            System.Console.WriteLine($"{gameKey}");
                             var responseTask = httpClient.GetStreamAsync(new Uri($"{BOARD_URL_START}{gameKey}{BOARD_URL_OPT}{IS_BOARD_FLIPPED}"));
                             responseTask.Wait(System.Threading.Timeout.Infinite);
                             bmp = Bitmap.FromStream(responseTask.Result);
                         }
 
-                        moveLines[moveCount].Add($"{moveKey}", (game.CurrentMoveNode.Value.SAN, $"{gameKey}", bmp, game.CurrentMoveNode.Value.Comment));
+
+                        Bitmap resizedBmp = new Bitmap(bmp, new Size(BOARD_SIZE, BOARD_SIZE));
+                        moveLines[moveCount].Add($"{moveKey}", (game.CurrentMoveNode.Value.SAN, $"{gameKey}", resizedBmp, game.CurrentMoveNode.Value.Comment));
                     }
 
                     if (moveCount + 1 < moveLines.Count)
@@ -104,7 +126,7 @@ namespace TabToPgn
 
                     maxWidth = Math.Max(maxWidth, moveLines[moveCount].Count);
 
-                    if (!game.HasNextMove)
+                    if (!game.HasNextMove && game.TagSection.ContainsKey("Opening"))
                     {
                         lastMoveNameList.Add(moveKey, game.TagSection["Opening"]);
                     }
@@ -136,11 +158,11 @@ namespace TabToPgn
             }
 
             // Create font and brush.
-            using Font drawFont = new Font(FontFamily.GenericSansSerif, 12f);
+            using Font drawFont = new Font(FontFamily.GenericSansSerif, FONT_SIZE);
             using Brush drawBrush = new SolidBrush(Color.FromArgb(255, 255, 255, 255));
             using Brush moveBkgBrush = new SolidBrush(Color.FromArgb(235, 200, 0, 0));
 
-            using var image = new Bitmap(maxWidth * BLOCK_SIZE, moveLines.Count * BLOCK_SIZE, PixelFormat.Format32bppArgb);
+            using var image = new Bitmap((maxWidth * BLOCK_SIZE_X) + SPACER_SIZE_X, moveLines.Count * BLOCK_SIZE_Y, PixelFormat.Format32bppArgb);
             using var graphics = Graphics.FromImage(image);
 
             graphics.CompositingQuality = CompositingQuality.HighQuality;
@@ -171,22 +193,22 @@ namespace TabToPgn
                                 if (moveLines[loopY + 1].Values[loopNextRowX].Item3 != null)
                                 {
                                     graphics.DrawLine(orangePen,
-                                                      (loopX * BLOCK_SIZE) + (SPACER_SIZE / 2) + (BOARD_SIZE / 2),
-                                                      (loopY * BLOCK_SIZE) + (SPACER_SIZE / 2) + (BOARD_SIZE),
-                                                      (loopX * BLOCK_SIZE) + (SPACER_SIZE / 2) + (BOARD_SIZE / 2),
-                                                      (loopY * BLOCK_SIZE) + (SPACER_SIZE / 2) + (BOARD_SIZE) + (SPACER_SIZE / 2));
+                                                      (SPACER_SIZE_X) + (loopX * BLOCK_SIZE_X) + (SPACER_SIZE_X / 2) + (BOARD_SIZE / 2),
+                                                      (loopY * BLOCK_SIZE_Y) + (SPACER_SIZE_Y / 2) + (BOARD_SIZE),
+                                                      (SPACER_SIZE_X) + (loopX * BLOCK_SIZE_X) + (SPACER_SIZE_X / 2) + (BOARD_SIZE / 2),
+                                                      (loopY * BLOCK_SIZE_Y) + (SPACER_SIZE_Y / 2) + (BOARD_SIZE) + (SPACER_SIZE_Y / 2));
 
                                     graphics.DrawLine(orangePen,
-                                                      (loopNextRowX * BLOCK_SIZE) + (SPACER_SIZE / 2) + (BOARD_SIZE / 2),
-                                                      (loopY * BLOCK_SIZE) + (SPACER_SIZE / 2) + (BOARD_SIZE) + (SPACER_SIZE / 2),
-                                                      (loopNextRowX * BLOCK_SIZE) + (SPACER_SIZE / 2) + (BOARD_SIZE / 2),
-                                                      ((loopY + 1) * BLOCK_SIZE) + (SPACER_SIZE / 2));
+                                                      (SPACER_SIZE_X) + (loopNextRowX * BLOCK_SIZE_X) + (SPACER_SIZE_X / 2) + (BOARD_SIZE / 2),
+                                                      (loopY * BLOCK_SIZE_Y) + (SPACER_SIZE_Y / 2) + (BOARD_SIZE) + (SPACER_SIZE_Y / 2),
+                                                      (SPACER_SIZE_X) + (loopNextRowX * BLOCK_SIZE_X) + (SPACER_SIZE_X / 2) + (BOARD_SIZE / 2),
+                                                      ((loopY + 1) * BLOCK_SIZE_Y) + (SPACER_SIZE_Y / 2));
 
                                     graphics.DrawLine(orangePen,
-                                                      (loopX * BLOCK_SIZE) + (SPACER_SIZE / 2) + (BOARD_SIZE / 2),
-                                                      (loopY * BLOCK_SIZE) + (SPACER_SIZE / 2) + (BOARD_SIZE) + (SPACER_SIZE / 2),
-                                                      (loopNextRowX * BLOCK_SIZE) + (SPACER_SIZE / 2) + (BOARD_SIZE / 2),
-                                                      ((loopY + 1) * BLOCK_SIZE));
+                                                      (SPACER_SIZE_X) + (loopX * BLOCK_SIZE_X) + (SPACER_SIZE_X / 2) + (BOARD_SIZE / 2),
+                                                      (loopY * BLOCK_SIZE_Y) + (SPACER_SIZE_Y / 2) + (BOARD_SIZE) + (SPACER_SIZE_Y / 2),
+                                                      (SPACER_SIZE_X) + (loopNextRowX * BLOCK_SIZE_X) + (SPACER_SIZE_X / 2) + (BOARD_SIZE / 2),
+                                                      ((loopY + 1) * BLOCK_SIZE_Y));
                                 }
                             }
                         }
@@ -204,16 +226,16 @@ namespace TabToPgn
                     if (lastMoveNameList.ContainsKey(moveLines[loopY].Keys[loopX]))
                     {
                         using var drawFormat = new System.Drawing.StringFormat() { FormatFlags = StringFormatFlags.DirectionVertical };
-                        var stringSize = graphics.MeasureString(lastMoveNameList[moveLines[loopY].Keys[loopX]], drawFont).Width;
+                        var stringSize = graphics.MeasureString(lastMoveNameList[moveLines[loopY].Keys[loopX]], drawFont);
 
-                        for (float txtLoop = (SPACER_SIZE / 2) + BLOCK_SIZE; txtLoop < image.Height; txtLoop += (stringSize+30))
+                        for (float txtLoop = (SPACER_SIZE_Y / 2) + BLOCK_SIZE_Y; txtLoop < image.Height; txtLoop += (stringSize.Width+30))
                         {
                             graphics.DrawString(lastMoveNameList[moveLines[loopY].Keys[loopX]],
-                                            drawFont,
-                                            drawBrush,
-                                            ((loopX * BLOCK_SIZE) + (SPACER_SIZE / 2)) - (BOX_WIDTH / 4),
-                                            txtLoop,
-                                            drawFormat);
+                                                drawFont,
+                                                drawBrush,
+                                                (SPACER_SIZE_X) + ((loopX * BLOCK_SIZE_X) + (SPACER_SIZE_X / 2)) - STRIPE_TXT_OFFSET,
+                                                txtLoop,
+                                                drawFormat);
                         }
 
                         lastMoveNameList.Remove(moveLines[loopY].Keys[loopX]);
@@ -221,25 +243,24 @@ namespace TabToPgn
 
                     if (loopY + 1 < moveLines.Count)
                     {
-                        for (int loopNextRowX = 0; loopNextRowX < moveLines[loopY + 1].Count; loopNextRowX++)
+                        bool isWhite = true;
+                        for (int loopNextRowX=0, moveNum=1; loopNextRowX < moveLines[loopY + 1].Count; loopNextRowX++, moveNum=!isWhite?moveNum+1:moveNum, isWhite=!isWhite)
                         {
                             if (moveLines[loopY + 1].Keys[loopNextRowX].Contains(moveLines[loopY].Keys[loopX], StringComparison.OrdinalIgnoreCase))
                             {
                                 if (moveLines[loopY + 1].Values[loopNextRowX].Item3 != null)
                                 {
                                     graphics.FillRectangle(moveBkgBrush,
-                                                           ((loopNextRowX * BLOCK_SIZE) + (SPACER_SIZE / 2) + (BOARD_SIZE / 2)) - (BOX_WIDTH / 2),
-                                                           ((loopY * BLOCK_SIZE) + (SPACER_SIZE / 2) + (BOARD_SIZE) + (SPACER_SIZE / 2)) - (BOX_HEIGHT / 2),
+                                                           (SPACER_SIZE_X) + ((loopNextRowX * BLOCK_SIZE_X) + (SPACER_SIZE_X / 2) + (BOARD_SIZE / 2)) - (BOX_WIDTH / 2),
+                                                           ((loopY * BLOCK_SIZE_Y) + (SPACER_SIZE_Y / 2) + (BOARD_SIZE) + (SPACER_SIZE_Y / 2)) - (BOX_HEIGHT / 2),
                                                            BOX_WIDTH,
                                                            BOX_HEIGHT);
 
-                                    graphics.DrawString(moveLines[loopY + 1].Values[loopNextRowX].Item1,
+                                    graphics.DrawString($"{(int)Math.Round((loopY+1)/2d,MidpointRounding.AwayFromZero)}.{((loopY+1)%2d!=0? "":"..")} {moveLines[loopY + 1].Values[loopNextRowX].Item1}",
                                                         drawFont,
                                                         drawBrush,
-                                                        ((loopNextRowX * BLOCK_SIZE) + (SPACER_SIZE / 2) + (BOARD_SIZE / 2)) - (BOX_WIDTH / 2) + 1,
-                                                        ((loopY * BLOCK_SIZE) + (SPACER_SIZE / 2) + (BOARD_SIZE) + (SPACER_SIZE / 2)) - (BOX_HEIGHT / 2) + 1);
-
-
+                                                        (SPACER_SIZE_X) + ((loopNextRowX * BLOCK_SIZE_X) + (SPACER_SIZE_X / 2) + (BOARD_SIZE / 2)) - (BOX_WIDTH / 2) + 1,
+                                                        ((loopY * BLOCK_SIZE_Y) + (SPACER_SIZE_Y / 2) + (BOARD_SIZE) + (SPACER_SIZE_Y / 2)) - (BOX_HEIGHT / 2) + 1);
                                 }
                             }
                         }
@@ -248,7 +269,9 @@ namespace TabToPgn
                     //Draw Board
                     if (moveLine[loopX].Value.Item3 != null)
                     {
-                        graphics.DrawImage(moveLine[loopX].Value.Item3, (loopX * BLOCK_SIZE) + (SPACER_SIZE / 2), (loopY * BLOCK_SIZE) + (SPACER_SIZE / 2));
+                        graphics.DrawImage(moveLine[loopX].Value.Item3,
+                                           (SPACER_SIZE_X) + (loopX * BLOCK_SIZE_X) + (SPACER_SIZE_X / 2), 
+                                           (loopY * BLOCK_SIZE_Y) + (SPACER_SIZE_Y / 2));
                     }
                 }
             }
