@@ -54,15 +54,15 @@ namespace TabToPgn
             const string BOARD_URL_OPT = @"&piece=space&size=" + BOARD_DOWNLOAD_SIZE;
             const int SPACER_SIZE_X = 16;
             const int SPACER_SIZE_Y = 30;
-            const int BOX_WIDTH = 72;
-            const int BOX_HEIGHT = 16;
+            const int BOX_WIDTH = 62;
+            const int BOX_HEIGHT = 14;
             const string BOARD_FEN = @"rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR";
             const float CONNECT_SIZE = 2.0f;
-            const float FONT_SIZE = 10f;
-            const int BOARD_SIZE = 120;
+            const float FONT_SIZE = 9f;
+            const int BOARD_SIZE = 110;
             const int BLOCK_SIZE_X = BOARD_SIZE + SPACER_SIZE_X;
             const int BLOCK_SIZE_Y = BOARD_SIZE + SPACER_SIZE_Y;
-            const int STRIPE_TXT_OFFSET = 17;
+            const int STRIPE_TXT_OFFSET = 16;
             string IS_BOARD_FLIPPED = isFromWhitesPerspective ? "" : "&flip=true";
 
 
