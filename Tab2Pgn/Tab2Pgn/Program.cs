@@ -42,40 +42,36 @@ namespace TabToPgn
 
             IEnumerable<Game<ChessLib.Data.MoveRepresentation.MoveStorage>> parsedGames = await ParseAndValidatePgn(preParsedPgn).ConfigureAwait(false);
             ValidateMoves(fileIn, parsedGames);
-            BuildMoveImage(parsedGames, fileIn.Contains("WHITE", StringComparison.OrdinalIgnoreCase));
+            var (LastMoveNameList, MoveLines, MaxWidth) = BuildMoveImageData(parsedGames, fileIn.Contains("WHITE", StringComparison.OrdinalIgnoreCase));
+
+            blah("AllBlack", LastMoveNameList, MoveLines, MaxWidth);
+
+            //foreach (var tline in MoveLines.Where(x => x.Values.Count > 1 && !string.IsNullOrEmpty(x.Values[1].Item1)) )
+            //{
+            //    blah(tline.Values[0].Item1, LastMoveNameList, MoveLines, MaxWidth);
+            //}            
+            
             DisplayPgn(parsedGames);
         }
 
-        private static void BuildMoveImage(IEnumerable<Game<ChessLib.Data.MoveRepresentation.MoveStorage>> parsedGames, bool isFromWhitesPerspective = true)
+        const int BOARD_SIZE = 150;
+
+        private static (SortedList<string, string> LastMoveNameList, List<SortedList<string, (string, string, Image, string)>> MoveLines, int MaxWidth) BuildMoveImageData(IEnumerable<Game<ChessLib.Data.MoveRepresentation.MoveStorage>> parsedGames, bool isFromWhitesPerspective = true)
         {
-            const string BOARD_DOWNLOAD_SIZE = "0";
-            const string BKG_URL = @"https://images.chesscomfiles.com/uploads/v1/theme/101328-0.caa989e5.jpeg";
+            const string BOARD_DOWNLOAD_SIZE = "0";   
             const string BOARD_URL_START = @"https://www.chess.com/dynboard?board=green&fen=";
             const string BOARD_URL_OPT = @"&piece=space&size=" + BOARD_DOWNLOAD_SIZE;
-            const int SPACER_SIZE_X = 16;
-            const int SPACER_SIZE_Y = 30;
-            const int BOX_WIDTH = 62;
-            const int BOX_HEIGHT = 14;
             const string BOARD_FEN = @"rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR";
-            const float CONNECT_SIZE = 2.0f;
-            const float FONT_SIZE = 9f;
-            const int BOARD_SIZE = 110;
-            const int BLOCK_SIZE_X = BOARD_SIZE + SPACER_SIZE_X;
-            const int BLOCK_SIZE_Y = BOARD_SIZE + SPACER_SIZE_Y;
-            const int STRIPE_TXT_OFFSET = 16;
+            
             string IS_BOARD_FLIPPED = isFromWhitesPerspective ? "" : "&flip=true";
-
 
             //Download initial position
             using var webClient = new WebClient();
             using var startBoardImgStream = new MemoryStream(webClient.DownloadData($"{BOARD_URL_START}{BOARD_FEN}{BOARD_URL_OPT}{IS_BOARD_FLIPPED}"));
             using var startBoardBmp = new Bitmap(Image.FromStream(startBoardImgStream));
             Bitmap startBoardresizedBmp = new Bitmap(startBoardBmp, new Size(BOARD_SIZE, BOARD_SIZE));
-            
-            SortedList<string, string> lastMoveNameList = new();
 
-            // Create a new pen.
-            using Pen orangePen = new Pen(Brushes.Orange) { Width = CONNECT_SIZE };
+            SortedList<string, string> lastMoveNameList = new();
 
             int moveCount = 0;
             int maxWidth = 0;
@@ -117,7 +113,7 @@ namespace TabToPgn
 
                     if (moveCount + 1 < moveLines.Count)
                     {
-                        int addedCount = moveLines[moveCount + 1].Where(x => x.Key.StartsWith(moveKey,StringComparison.OrdinalIgnoreCase)).Count();
+                        int addedCount = moveLines[moveCount + 1].Where(x => x.Key.StartsWith(moveKey, StringComparison.OrdinalIgnoreCase)).Count();
                         if (addedCount >= 1)
                         {
                             moveLines[moveCount].Add($"{moveKey}{addedCount}", ("", "", null, ""));
@@ -134,7 +130,6 @@ namespace TabToPgn
 
                 game.GoToInitialState();
             }
-
 
             for (int loopY = 1; loopY < (moveLines.Count - 1); loopY++)
             {
@@ -156,11 +151,27 @@ namespace TabToPgn
 
                 maxWidth = Math.Max(maxWidth, moveLines[loopY].Count);
             }
+                
+            return (lastMoveNameList,moveLines, maxWidth);
+        }
 
-            // Create font and brush.
+         private static void blah(string startMove, SortedList<string, string> lastMoveNameList, List<SortedList<string, (string, string, Image, string)>> moveLines, int maxWidth) {
+            const string BKG_URL = @"https://images.chesscomfiles.com/uploads/v1/theme/101328-0.caa989e5.jpeg";
+            const int BOX_WIDTH = 62;
+            const int BOX_HEIGHT = 14;
+            const float FONT_SIZE = 9f;
+            const int SPACER_SIZE_X = 16;
+            const int SPACER_SIZE_Y = 30;
+            const int BLOCK_SIZE_X = BOARD_SIZE + SPACER_SIZE_X;
+            const int BLOCK_SIZE_Y = BOARD_SIZE + SPACER_SIZE_Y;
+            const int STRIPE_TXT_OFFSET = 16;
+            const float CONNECT_SIZE = 2.0f;
+
+            // Create font/brush/pen.
             using Font drawFont = new Font(FontFamily.GenericSansSerif, FONT_SIZE);
             using Brush drawBrush = new SolidBrush(Color.FromArgb(255, 255, 255, 255));
             using Brush moveBkgBrush = new SolidBrush(Color.FromArgb(235, 200, 0, 0));
+            using Pen orangePen = new Pen(Brushes.Orange) { Width = CONNECT_SIZE };
 
             using var image = new Bitmap((maxWidth * BLOCK_SIZE_X) + SPACER_SIZE_X, moveLines.Count * BLOCK_SIZE_Y, PixelFormat.Format32bppArgb);
             using var graphics = Graphics.FromImage(image);
@@ -173,12 +184,18 @@ namespace TabToPgn
 
             graphics.Clear(Color.Black);
 
+            WebClient webClient = new();
             using var bkgImgStream = new MemoryStream(webClient.DownloadData(BKG_URL));
             Image bkgImage = Image.FromStream(bkgImgStream);
             graphics.DrawImage(bkgImage, 0, 0, image.Width, image.Height);
 
             for (int loopY = 0; loopY < moveLines.Count; loopY++)
             {
+                //if(moveLines[loopY].Values.Count > 1 && moveLines[loopY].Values[1].Item1 != startMove)
+                //{
+                //    continue;
+                //}
+
                 var moveLine = moveLines[loopY].OrderBy(x => x.Key).ToArray();
 
                 for (int loopX = 0; loopX < moveLine.Length; loopX++)
@@ -219,6 +236,11 @@ namespace TabToPgn
 
             for (int loopY = 0; loopY < moveLines.Count; loopY++)
             {
+                //if (moveLines[loopY].Values.Count > 1 && moveLines[loopY].Values[1].Item1 != startMove)
+                //{
+                //    continue;
+                //}
+
                 var moveLine = moveLines[loopY].OrderBy(x => x.Key).ToArray();
 
                 for (int loopX = 0; loopX < moveLine.Length; loopX++)
@@ -238,7 +260,7 @@ namespace TabToPgn
                                                 drawFormat);
                         }
 
-                        lastMoveNameList.Remove(moveLines[loopY].Keys[loopX]);
+                        //lastMoveNameList.Remove(moveLines[loopY].Keys[loopX]);
                     }
 
                     if (loopY + 1 < moveLines.Count)
@@ -276,7 +298,7 @@ namespace TabToPgn
                 }
             }
 
-            image.Save(@"C:\Dropbox\ChessStats\resized.png", ImageFormat.Png);
+            image.Save($"C:\\Dropbox\\ChessStats\\resized_{startMove}.png", ImageFormat.Png);
         }
 
         [System.Diagnostics.CodeAnalysis.SuppressMessage("Globalization", "CA1303:Do not pass literals as localized parameters", Justification = "Will never be localized")]
