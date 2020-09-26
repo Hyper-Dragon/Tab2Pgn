@@ -1,4 +1,5 @@
 ﻿using ChessLib.Data;
+using ChessLib.Data.Helpers;
 using ChessLib.Parse.PGN;
 using System;
 using System.Collections.Generic;
@@ -13,11 +14,16 @@ using System.Net;
 using System.Net.Http;
 using System.Text;
 using System.Threading.Tasks;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace TabToPgn
 {
     internal class Program
     {
+        private readonly static string[] RANKS = { "1", "2", "3", "4", "5", "6", "7", "8" };
+        private readonly static string[] FILES = { "a", "b", "c", "d", "e", "f", "g", "h" };
+
         private static async Task Main(string[] args)
         {
             //C:\\Dropbox\\ChessStats\\RepSheet\\RepWhite.tsv
@@ -26,7 +32,7 @@ namespace TabToPgn
             string[] lines = System.IO.File.ReadAllLines(fileIn);
             string preParsedPgn = "";
 
-            if (fileIn.EndsWith("tsv",StringComparison.OrdinalIgnoreCase))
+            if (fileIn.EndsWith("tsv", StringComparison.OrdinalIgnoreCase))
             {
                 List<(string title, string eco, int ply, string moves)> formatedMoves = BuildMoveLines(lines);
                 preParsedPgn = BuildPreParsedPgn(formatedMoves);
@@ -41,7 +47,7 @@ namespace TabToPgn
             }
 
             IEnumerable<Game<ChessLib.Data.MoveRepresentation.MoveStorage>> parsedGames = await ParseAndValidatePgn(preParsedPgn).ConfigureAwait(false);
-            ValidateMoves(fileIn, parsedGames);
+            var twentyMovesFile = ValidateMoves(fileIn, parsedGames);
             var (LastMoveNameList, MoveLines, MaxWidth) = BuildMoveImageData(parsedGames, fileIn.Contains("WHITE", StringComparison.OrdinalIgnoreCase));
 
             blah("AllBlack", LastMoveNameList, MoveLines, MaxWidth);
@@ -50,19 +56,26 @@ namespace TabToPgn
             //{
             //    blah(tline.Values[0].Item1, LastMoveNameList, MoveLines, MaxWidth);
             //}            
-            
+
+            using (FileStream fs = File.Create($"C:\\Dropbox\\ChessStats\\TwmBlackOpenings.twm"))
+            {
+                await JsonSerializer.SerializeAsync(fs, twentyMovesFile).ConfigureAwait(false);
+            }
+
+
             DisplayPgn(parsedGames);
+
         }
 
         const int BOARD_SIZE = 150;
 
         private static (SortedList<string, string> LastMoveNameList, List<SortedList<string, (string, string, Image, string)>> MoveLines, int MaxWidth) BuildMoveImageData(IEnumerable<Game<ChessLib.Data.MoveRepresentation.MoveStorage>> parsedGames, bool isFromWhitesPerspective = true)
         {
-            const string BOARD_DOWNLOAD_SIZE = "0";   
+            const string BOARD_DOWNLOAD_SIZE = "0";
             const string BOARD_URL_START = @"https://www.chess.com/dynboard?board=green&fen=";
             const string BOARD_URL_OPT = @"&piece=space&size=" + BOARD_DOWNLOAD_SIZE;
             const string BOARD_FEN = @"rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR";
-            
+
             string IS_BOARD_FLIPPED = isFromWhitesPerspective ? "" : "&flip=true";
 
             //Download initial position
@@ -151,11 +164,11 @@ namespace TabToPgn
 
                 maxWidth = Math.Max(maxWidth, moveLines[loopY].Count);
             }
-                
-            return (lastMoveNameList,moveLines, maxWidth);
+
+            return (lastMoveNameList, moveLines, maxWidth);
         }
 
-         private static void blah(string startMove, SortedList<string, string> lastMoveNameList, List<SortedList<string, (string, string, Image, string)>> moveLines, int maxWidth) {
+        private static void blah(string startMove, SortedList<string, string> lastMoveNameList, List<SortedList<string, (string, string, Image, string)>> moveLines, int maxWidth) {
             const string BKG_URL = @"https://images.chesscomfiles.com/uploads/v1/theme/101328-0.caa989e5.jpeg";
             const int BOX_WIDTH = 62;
             const int BOX_HEIGHT = 14;
@@ -205,7 +218,7 @@ namespace TabToPgn
                     {
                         for (int loopNextRowX = 0; loopNextRowX < moveLines[loopY + 1].Count; loopNextRowX++)
                         {
-                            if (moveLines[loopY + 1].Keys[loopNextRowX].Contains(moveLines[loopY].Keys[loopX],StringComparison.OrdinalIgnoreCase))
+                            if (moveLines[loopY + 1].Keys[loopNextRowX].Contains(moveLines[loopY].Keys[loopX], StringComparison.OrdinalIgnoreCase))
                             {
                                 if (moveLines[loopY + 1].Values[loopNextRowX].Item3 != null)
                                 {
@@ -250,7 +263,7 @@ namespace TabToPgn
                         using var drawFormat = new System.Drawing.StringFormat() { FormatFlags = StringFormatFlags.DirectionVertical };
                         var stringSize = graphics.MeasureString(lastMoveNameList[moveLines[loopY].Keys[loopX]], drawFont);
 
-                        for (float txtLoop = (SPACER_SIZE_Y / 2) + BLOCK_SIZE_Y; txtLoop < image.Height; txtLoop += (stringSize.Width+30))
+                        for (float txtLoop = (SPACER_SIZE_Y / 2) + BLOCK_SIZE_Y; txtLoop < image.Height; txtLoop += (stringSize.Width + 30))
                         {
                             graphics.DrawString(lastMoveNameList[moveLines[loopY].Keys[loopX]],
                                                 drawFont,
@@ -266,7 +279,7 @@ namespace TabToPgn
                     if (loopY + 1 < moveLines.Count)
                     {
                         bool isWhite = true;
-                        for (int loopNextRowX=0, moveNum=1; loopNextRowX < moveLines[loopY + 1].Count; loopNextRowX++, moveNum=!isWhite?moveNum+1:moveNum, isWhite=!isWhite)
+                        for (int loopNextRowX = 0, moveNum = 1; loopNextRowX < moveLines[loopY + 1].Count; loopNextRowX++, moveNum = !isWhite ? moveNum + 1 : moveNum, isWhite = !isWhite)
                         {
                             if (moveLines[loopY + 1].Keys[loopNextRowX].Contains(moveLines[loopY].Keys[loopX], StringComparison.OrdinalIgnoreCase))
                             {
@@ -278,7 +291,7 @@ namespace TabToPgn
                                                            BOX_WIDTH,
                                                            BOX_HEIGHT);
 
-                                    graphics.DrawString($"{(int)Math.Round((loopY+1)/2d,MidpointRounding.AwayFromZero)}.{((loopY+1)%2d!=0? "":"..")} {moveLines[loopY + 1].Values[loopNextRowX].Item1}",
+                                    graphics.DrawString($"{(int)Math.Round((loopY + 1) / 2d, MidpointRounding.AwayFromZero)}.{((loopY + 1) % 2d != 0 ? "" : "..")} {moveLines[loopY + 1].Values[loopNextRowX].Item1}",
                                                         drawFont,
                                                         drawBrush,
                                                         (SPACER_SIZE_X) + ((loopNextRowX * BLOCK_SIZE_X) + (SPACER_SIZE_X / 2) + (BOARD_SIZE / 2)) - (BOX_WIDTH / 2) + 1,
@@ -292,7 +305,7 @@ namespace TabToPgn
                     if (moveLine[loopX].Value.Item3 != null)
                     {
                         graphics.DrawImage(moveLine[loopX].Value.Item3,
-                                           (SPACER_SIZE_X) + (loopX * BLOCK_SIZE_X) + (SPACER_SIZE_X / 2), 
+                                           (SPACER_SIZE_X) + (loopX * BLOCK_SIZE_X) + (SPACER_SIZE_X / 2),
                                            (loopY * BLOCK_SIZE_Y) + (SPACER_SIZE_Y / 2));
                     }
                 }
@@ -302,8 +315,10 @@ namespace TabToPgn
         }
 
         [System.Diagnostics.CodeAnalysis.SuppressMessage("Globalization", "CA1303:Do not pass literals as localized parameters", Justification = "Will never be localized")]
-        private static void ValidateMoves(string fileIn, IEnumerable<Game<ChessLib.Data.MoveRepresentation.MoveStorage>> parsedGames)
+        private static List<TwentyMovesOpeningFile> ValidateMoves(string fileIn, IEnumerable<Game<ChessLib.Data.MoveRepresentation.MoveStorage>> parsedGames)
         {
+            List<TwentyMovesOpeningFile> twentyMovesOpenings = new();
+
             ChessLib.Data.Types.Enums.Color? repForSide = null;
             SortedDictionary<string, (string pgnEvent, string move)> fenList = new SortedDictionary<string, (string pgnEvent, string move)>();
 
@@ -318,9 +333,19 @@ namespace TabToPgn
 
             foreach (Game<ChessLib.Data.MoveRepresentation.MoveStorage> game in parsedGames)
             {
+                var twentyMovesGame = new TwentyMovesOpeningFile() { Opening = "test" };
+                twentyMovesOpenings.Add(twentyMovesGame);
+
                 while (game.HasNextMove)
                 {
                     game.TraverseForward();
+
+                    twentyMovesGame.Moves.Add(new TwentyMovesMove() { San = game.CurrentMoveNode.Value.SAN,
+                                                                      FromSquare = $"{FILES[game.CurrentMoveNode.Value.SourceIndex.FileFromIdx()]}{RANKS[game.CurrentMoveNode.Value.SourceIndex.RankFromIdx()]}",
+                                                                      ToSquare = $"{FILES[game.CurrentMoveNode.Value.DestinationIndex.FileFromIdx()]}{RANKS[game.CurrentMoveNode.Value.DestinationIndex.RankFromIdx()]}",
+                                                                      MoveNumber = 0
+                    });
+
 
                     if (repForSide != null && game.Board.ActivePlayer == repForSide)
                     {
@@ -342,7 +367,7 @@ namespace TabToPgn
                             }
                             else
                             {
-                               fenList.Add(gameKey, ($"{game.TagSection["Event"]} ({game.Board.ActivePlayer} Move {game.Board.FullmoveCounter})", game.NextMoveNode.Value.ToString()));
+                                fenList.Add(gameKey, ($"{game.TagSection["Event"]} ({game.Board.ActivePlayer} Move {game.Board.FullmoveCounter})", game.NextMoveNode.Value.ToString()));
                             }
                         }
                     }
@@ -352,6 +377,8 @@ namespace TabToPgn
             }
 
             Console.WriteLine("");
+
+            return twentyMovesOpenings;
         }
 
         private static List<(string title, string eco, int ply, string moves)> BuildMoveLines(string[] lines)
@@ -453,5 +480,24 @@ namespace TabToPgn
             lineOut.Append("*\r\n\r\n");
             return lineOut.ToString();
         }
+    }
+
+
+    public class TwentyMovesOpeningFile
+    {
+        public string Opening { get; set; }
+        public List<TwentyMovesMove> Moves { get; } = new List<TwentyMovesMove>();
+
+        public TwentyMovesOpeningFile() { }
+    }
+
+    public class TwentyMovesMove
+    {
+        public int MoveNumber { get; set; }
+        public string San { get; set; }
+        public string FromSquare { get; set; }
+        public string ToSquare { get; set; }
+
+        public TwentyMovesMove() { }
     }
 }
