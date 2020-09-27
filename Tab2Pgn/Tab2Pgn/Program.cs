@@ -16,6 +16,7 @@ using System.Text;
 using System.Threading.Tasks;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Reflection.Metadata.Ecma335;
 
 namespace TabToPgn
 {
@@ -47,10 +48,10 @@ namespace TabToPgn
             }
 
             IEnumerable<Game<ChessLib.Data.MoveRepresentation.MoveStorage>> parsedGames = await ParseAndValidatePgn(preParsedPgn).ConfigureAwait(false);
-            var twentyMovesFile = ValidateMoves(fileIn, parsedGames);
+            var twentyMovesFile = ValidateMoves(fileIn, preParsedPgn , parsedGames);
             var (LastMoveNameList, MoveLines, MaxWidth) = BuildMoveImageData(parsedGames, fileIn.Contains("WHITE", StringComparison.OrdinalIgnoreCase));
 
-            blah("AllBlack", LastMoveNameList, MoveLines, MaxWidth);
+            RenderMoveImageData("AllBlack", LastMoveNameList, MoveLines, MaxWidth);
 
             //foreach (var tline in MoveLines.Where(x => x.Values.Count > 1 && !string.IsNullOrEmpty(x.Values[1].Item1)) )
             //{
@@ -59,9 +60,14 @@ namespace TabToPgn
 
             using (FileStream fs = File.Create($"C:\\Dropbox\\ChessStats\\TwmBlackOpenings.twm"))
             {
-                await JsonSerializer.SerializeAsync(fs, twentyMovesFile).ConfigureAwait(false);
+                await JsonSerializer.SerializeAsync(fs, twentyMovesFile, new JsonSerializerOptions { WriteIndented = true }).ConfigureAwait(false);
             }
 
+
+            using (FileStream fs = File.OpenRead($"C:\\Dropbox\\ChessStats\\TwmBlackOpenings.twm"))
+            {
+                var deserializeTest = await JsonSerializer.DeserializeAsync<TabToPgn.TwentyMovesOpeningFile>(fs).ConfigureAwait(false);
+            }
 
             DisplayPgn(parsedGames);
 
@@ -168,7 +174,7 @@ namespace TabToPgn
             return (lastMoveNameList, moveLines, maxWidth);
         }
 
-        private static void blah(string startMove, SortedList<string, string> lastMoveNameList, List<SortedList<string, (string, string, Image, string)>> moveLines, int maxWidth) {
+        private static void RenderMoveImageData(string startMove, SortedList<string, string> lastMoveNameList, List<SortedList<string, (string, string, Image, string)>> moveLines, int maxWidth) {
             const string BKG_URL = @"https://images.chesscomfiles.com/uploads/v1/theme/101328-0.caa989e5.jpeg";
             const int BOX_WIDTH = 62;
             const int BOX_HEIGHT = 14;
@@ -315,9 +321,10 @@ namespace TabToPgn
         }
 
         [System.Diagnostics.CodeAnalysis.SuppressMessage("Globalization", "CA1303:Do not pass literals as localized parameters", Justification = "Will never be localized")]
-        private static List<TwentyMovesOpeningFile> ValidateMoves(string fileIn, IEnumerable<Game<ChessLib.Data.MoveRepresentation.MoveStorage>> parsedGames)
+        private static TwentyMovesOpeningFile ValidateMoves(string fileIn, string fileInContents, IEnumerable<Game<ChessLib.Data.MoveRepresentation.MoveStorage>> parsedGames)
         {
-            List<TwentyMovesOpeningFile> twentyMovesOpenings = new();
+            var twentyMovesOpenings = new TwentyMovesOpeningFile() { SourcePgnFileName = fileIn,
+                                                                     SourcePgn = fileInContents};
 
             ChessLib.Data.Types.Enums.Color? repForSide = null;
             SortedDictionary<string, (string pgnEvent, string move)> fenList = new SortedDictionary<string, (string pgnEvent, string move)>();
@@ -325,25 +332,45 @@ namespace TabToPgn
             if (fileIn.Contains("WHITE", StringComparison.InvariantCultureIgnoreCase))
             {
                 repForSide = ChessLib.Data.Types.Enums.Color.White;
+                twentyMovesOpenings.ForSide = TwentyMovesOpeningFile.SIDE.White;
             }
             else if (fileIn.Contains("BLACK", StringComparison.InvariantCultureIgnoreCase))
             {
                 repForSide = ChessLib.Data.Types.Enums.Color.Black;
+                twentyMovesOpenings.ForSide = TwentyMovesOpeningFile.SIDE.Black;
             }
 
             foreach (Game<ChessLib.Data.MoveRepresentation.MoveStorage> game in parsedGames)
             {
-                var twentyMovesGame = new TwentyMovesOpeningFile() { Opening = "test" };
-                twentyMovesOpenings.Add(twentyMovesGame);
-
+                var twentyMovesGame = new TwentyMovesGame() { 
+                    Opening = game.TagSection["Opening"],
+                    Key = Guid.NewGuid().ToString(),
+                    Eco = game.TagSection["ECO"],
+                };
+                twentyMovesOpenings.Games.Add(twentyMovesGame);
+              
                 while (game.HasNextMove)
                 {
+                    
                     game.TraverseForward();
 
-                    twentyMovesGame.Moves.Add(new TwentyMovesMove() { San = game.CurrentMoveNode.Value.SAN,
-                                                                      FromSquare = $"{FILES[game.CurrentMoveNode.Value.SourceIndex.FileFromIdx()]}{RANKS[game.CurrentMoveNode.Value.SourceIndex.RankFromIdx()]}",
-                                                                      ToSquare = $"{FILES[game.CurrentMoveNode.Value.DestinationIndex.FileFromIdx()]}{RANKS[game.CurrentMoveNode.Value.DestinationIndex.RankFromIdx()]}",
-                                                                      MoveNumber = 0
+                    twentyMovesGame.Moves.Add(new TwentyMovesMove()
+                    {
+                        San = game.CurrentMoveNode.Value.SAN,
+                        Comment = string.IsNullOrEmpty(game.CurrentMoveNode.Value.Comment)?"": game.CurrentMoveNode.Value.Comment,
+                        FullMoveNumber = twentyMovesGame.Moves.Count == 0 ? 1 : ((twentyMovesGame.Moves[^1].ActivePlayer == TwentyMovesOpeningFile.SIDE.White)? twentyMovesGame.Moves[^1].FullMoveNumber: twentyMovesGame.Moves[^1].FullMoveNumber+1),
+                        MoveNumber = twentyMovesGame.Moves.Count == 0 ? 1 : twentyMovesGame.Moves[^1].MoveNumber + 1,
+                        ActivePlayer = twentyMovesGame.Moves.Count == 0 ? TwentyMovesOpeningFile.SIDE.White : ((twentyMovesGame.Moves[^1].ActivePlayer == TwentyMovesOpeningFile.SIDE.White) ? TwentyMovesOpeningFile.SIDE.Black: TwentyMovesOpeningFile.SIDE.White),
+                        Fen = game.CurrentFEN,
+                        Coordinate = $"{FILES[game.CurrentMoveNode.Value.SourceIndex.FileFromIdx()]}" +
+                                     $"{RANKS[game.CurrentMoveNode.Value.SourceIndex.RankFromIdx()]}" +
+                                     $"-" +
+                                     $"{FILES[game.CurrentMoveNode.Value.DestinationIndex.FileFromIdx()]}" +
+                                     $"{RANKS[game.CurrentMoveNode.Value.DestinationIndex.RankFromIdx()]}",
+                        FromSqX = (ushort)(8 -game.CurrentMoveNode.Value.SourceIndex.FileFromIdx()),
+                        FromSqY = (ushort)(8 -game.CurrentMoveNode.Value.SourceIndex.RankFromIdx()),
+                        ToSqX = (ushort)(8 -game.CurrentMoveNode.Value.DestinationIndex.FileFromIdx()),
+                        ToSqY = (ushort)(8 -game.CurrentMoveNode.Value.DestinationIndex.RankFromIdx())
                     });
 
 
@@ -485,19 +512,40 @@ namespace TabToPgn
 
     public class TwentyMovesOpeningFile
     {
-        public string Opening { get; set; }
-        public List<TwentyMovesMove> Moves { get; } = new List<TwentyMovesMove>();
+        public enum SIDE { White, Black };
+        public string Comment { get; } = "Twenty Moves Trainer - Opening File";
+        public SIDE ForSide { get; set; } = SIDE.White;
+        public string SourcePgnFileName { get; set; }
+        public DateTime CreatedDateUtc { get; set; } = DateTime.UtcNow;
+        public string InitialBoardFen { get; } = @"rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR";
+        public List<TwentyMovesGame> Games { get; } = new();
+        public string SourcePgn { get; set; }
+    }
 
-        public TwentyMovesOpeningFile() { }
+    public class TwentyMovesGame
+    {
+        public string Opening { get; set; }
+        public string Eco { get; set; }
+        public string Key { get; set; }
+        public int Attempts { get; set; }
+        public int SuccessCount { get; set; }
+        public int FailCount { get; set; }
+        public bool WasLastSuccess { get; set; }
+        public List<TwentyMovesMove> Moves { get; } = new();
     }
 
     public class TwentyMovesMove
     {
-        public int MoveNumber { get; set; }
+        public int MoveNumber { get; set; } = 1;
+        public int FullMoveNumber { get; set; } = 1;
+        public TwentyMovesOpeningFile.SIDE ActivePlayer { get; set; } = TwentyMovesOpeningFile.SIDE.White;
+        public string Comment { get; set; }
+        public string Fen { get; set; }
         public string San { get; set; }
-        public string FromSquare { get; set; }
-        public string ToSquare { get; set; }
-
-        public TwentyMovesMove() { }
+        public string Coordinate { get; set; }
+        public ushort FromSqX { get; set; }
+        public ushort FromSqY { get; set; }
+        public ushort ToSqX { get; set; }
+        public ushort ToSqY { get; set; }
     }
 }
