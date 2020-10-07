@@ -90,13 +90,15 @@ namespace TabToPgn
             using var startBoardBmp = new Bitmap(Image.FromStream(startBoardImgStream));
             Bitmap startBoardresizedBmp = new Bitmap(startBoardBmp, new Size(BOARD_SIZE, BOARD_SIZE));
 
-            SortedList<string, string> lastMoveNameList = new();
+            SortedList<string, string> lastMoveNameList = new SortedList<string, string>();
 
             int moveCount = 0;
             int maxWidth = 0;
 
-            List<SortedList<string, (string, string, Image, string)>> moveLines = new();
-            moveLines.Add(new SortedList<string, (string, string, Image, string)>());
+            List<SortedList<string, (string, string, Image, string)>> moveLines = new List<SortedList<string, (string, string, Image, string)>>
+            {
+                new SortedList<string, (string, string, Image, string)>()
+            };
             moveLines[0].Add(BOARD_FEN, ("", BOARD_FEN, startBoardresizedBmp, ""));
 
             foreach (Game<ChessLib.Data.MoveRepresentation.MoveStorage> game in parsedGames)
@@ -203,7 +205,7 @@ namespace TabToPgn
 
             graphics.Clear(Color.Black);
 
-            WebClient webClient = new();
+            WebClient webClient = new WebClient();
             using var bkgImgStream = new MemoryStream(webClient.DownloadData(BKG_URL));
             Image bkgImage = Image.FromStream(bkgImgStream);
             graphics.DrawImage(bkgImage, 0, 0, image.Width, image.Height);
@@ -324,7 +326,8 @@ namespace TabToPgn
         private static TwentyMovesOpeningFile ValidateMoves(string fileIn, string fileInContents, IEnumerable<Game<ChessLib.Data.MoveRepresentation.MoveStorage>> parsedGames)
         {
             var twentyMovesOpenings = new TwentyMovesOpeningFile() { SourcePgnFileName = fileIn,
-                                                                     SourcePgn = fileInContents};
+                                                                     SourcePgn = fileInContents,
+                                                                     Games = new List<TwentyMovesGame>()};
 
             ChessLib.Data.Types.Enums.Color? repForSide = null;
             SortedDictionary<string, (string pgnEvent, string move)> fenList = new SortedDictionary<string, (string pgnEvent, string move)>();
@@ -367,10 +370,10 @@ namespace TabToPgn
                                      $"-" +
                                      $"{FILES[game.CurrentMoveNode.Value.DestinationIndex.FileFromIdx()]}" +
                                      $"{RANKS[game.CurrentMoveNode.Value.DestinationIndex.RankFromIdx()]}",
-                        FromSqX = (ushort)(8 -game.CurrentMoveNode.Value.SourceIndex.FileFromIdx()),
-                        FromSqY = (ushort)(8 -game.CurrentMoveNode.Value.SourceIndex.RankFromIdx()),
-                        ToSqX = (ushort)(8 -game.CurrentMoveNode.Value.DestinationIndex.FileFromIdx()),
-                        ToSqY = (ushort)(8 -game.CurrentMoveNode.Value.DestinationIndex.RankFromIdx())
+                        FromSqY = (game.CurrentMoveNode.Value.SourceIndex.FileFromIdx()),
+                        FromSqX = 7-(game.CurrentMoveNode.Value.SourceIndex.RankFromIdx()),
+                        ToSqY = (game.CurrentMoveNode.Value.DestinationIndex.FileFromIdx()),
+                        ToSqX = 7-(game.CurrentMoveNode.Value.DestinationIndex.RankFromIdx())
                     });
 
 
@@ -518,7 +521,7 @@ namespace TabToPgn
         public string SourcePgnFileName { get; set; }
         public DateTime CreatedDateUtc { get; set; } = DateTime.UtcNow;
         public string InitialBoardFen { get; } = @"rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR";
-        public List<TwentyMovesGame> Games { get; } = new();
+        public List<TwentyMovesGame> Games { get; set;}
         public string SourcePgn { get; set; }
     }
 
@@ -531,7 +534,7 @@ namespace TabToPgn
         public int SuccessCount { get; set; }
         public int FailCount { get; set; }
         public bool WasLastSuccess { get; set; }
-        public List<TwentyMovesMove> Moves { get; } = new();
+        public List<TwentyMovesMove> Moves { get; } = new List<TwentyMovesMove>();
     }
 
     public class TwentyMovesMove
@@ -543,9 +546,9 @@ namespace TabToPgn
         public string Fen { get; set; }
         public string San { get; set; }
         public string Coordinate { get; set; }
-        public ushort FromSqX { get; set; }
-        public ushort FromSqY { get; set; }
-        public ushort ToSqX { get; set; }
-        public ushort ToSqY { get; set; }
+        public int FromSqX { get; set; }
+        public int FromSqY { get; set; }
+        public int ToSqX { get; set; }
+        public int ToSqY { get; set; }
     }
 }
